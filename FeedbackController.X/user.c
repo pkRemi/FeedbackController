@@ -3,21 +3,12 @@
 /******************************************************************************/
 
 /* Device header file */
-#if defined(__XC16__)
-    #include <xc.h>
-#elif defined(__C30__)
-    #if defined(__PIC24E__)
-    	#include <p24Exxxx.h>
-    #elif defined (__PIC24F__)||defined (__PIC24FK__)
-	#include <p24Fxxxx.h>
-    #elif defined(__PIC24H__)
-	#include <p24Hxxxx.h>
-    #endif
-#endif
+#include <p24Fxxxx.h>
 
 #include <stdint.h>          /* For uint32_t definition */
 #include <stdbool.h>         /* For true/false definition */
 #include <string.h>
+#include "i2c.h"           /* I2C functions                                   */
 
 #include "user.h"            /* variables/params used by user.c */
 
@@ -34,27 +25,36 @@ void InitApp(void)
     /* Setup analog functionality and port direction */
     //TRISA = 0b0000000000010011;   // POR Setting
     //TRISA = 0b0000000000000011;   // RA4 output
-    TRISAbits.TRISA4 = 0;           // RA4 output
+    TRISAbits.TRISA4 = 0;           // RA4 output as LED
+    TRISBbits.TRISB4 = 0;           // RB4 output as LED RF status
+    TRISBbits.TRISB7 = 1;           // RB7 as input for switch
+    AD1PCFG = 0xFFFF;
     /* Initialize peripherals */
 
     /* Setup of Remappable Pin configuration                                  */
+    //__builtin_write_OSCCONL(0x46);
+    //__builtin_write_OSCCONL(0x57);
     OSCCONbits.IOLOCK = 0;      //Allowes update of RP registers
-
     // Serial port UART1
     //RPINR18bits.U1RXR = 11;      // Set UART1 RX to RP11 (maybe not needed for TX)
     RPOR5bits.RP10R = 3 ;       // Set RP10 to UART1 TX (3)
 
     // SPI1 input
     RPINR20bits.SDI1R = 13;     // SPI1 Data Input MISO RP13 pin 24
-
+    
     // SPI1 outputs
     //RPOR5bits.RP11R = 9;        // Slave select 1 to RP11 pin 22
     RPOR6bits.RP12R = 7;        // MOSI SDO1 to RP12 pin 23
     RPOR7bits.RP14R = 8;        // SCK1OUT to RP14 pin 25
     TRISBbits.TRISB15 = 0;      // Set RB15 pin 26 to output CE
-    _LATB11 = 1;                // Set /CS high
+    CS_nRF = 1;                // Set /CS high
     TRISBbits.TRISB11 = 0;      // /CS for nRF
-    OSCCONbits.IOLOCK = 1;      //Locks RP registers
+    //__builtin_write_OSCCONL(0x46);
+    //__builtin_write_OSCCONL(0x57);
+
+
+
+    OSCCONbits.IOLOCK = 1;      //Locks RP registers (may need something more)
 }
 
 void initSerial(void)
@@ -90,43 +90,72 @@ void initSPI1(void)
     SPI1CON2bits.FRMEN = 0;     // Framed SPIx support enabled
     SPI1CON2bits.SPIFSD = 0;    // Frame sync pulse output (master)
     SPI1CON2bits.SPIFPOL = 0;   // Frame sync pulse is active-low
-    SPI1CON2bits.SPIFE = 1;     // Frame sync pulse precedes first bit clock
-    SPI1CON2bits.SPIBEN = 1;    // Enhanced Buffer enabled
+    SPI1CON2bits.SPIFE = 0;     // 0 = Frame sync pulse precedes first bit clock (not used)
+    SPI1CON2bits.SPIBEN = 0;    // Enhanced Buffer disabled
     SPI1STATbits.SPIROV = 0;    // No overflow
-    SPI1STATbits.SISEL = 0b101; // Interrupt when the last bit is shifted out of SPIxSR, now the transmit is complete
-    _LATB11 = 1;                // Set /CS high
+    SPI1STATbits.SISEL = 0b00; // 000 = Interrupt when the last data in the receive buffer is read, as a result, the buffer is empty (SRXMPTbit set)
+    CS_nRF = 1;                // Set /CS high
     SPI1STATbits.SPIEN = 1;     // Enable SPI1 after configuration
     // Setup interrupt
     IFS0bits.SPI1IF = 0;        // Reset interrupt flag
-    IEC0bits.SPI1IE = 1;        // Enable SPI1 interrupt
+    IEC0bits.SPI1IE = 0;        // Disable SPI1 interrupt
 
 }
 
 void initnRF(void)
 {
-    static const char strTX_ADDR[6] = {0x30, 0xa5, 0xd6, 0x65, 0xcb, 0x2a};
+    static const char strTX_ADDR[5] = {0xa5, 0xd6, 0x65, 0xcb, 0x2a};
     char initString[64] = {0};
     int size = 0;
 
     // Send powerup and TX mode
-    initString[0] = 0x20;
-    initString[1] = 0b00001010;
-    size = 2;
-    sendSPI1string(initString, size);
+    LDByteWriteSPI(0x20, 0b00001010);
 
     // Send TX_ADDR
+    LDPageWriteSPI(0x30, strTX_ADDR, 5);
     size = sizeof(strTX_ADDR);
     memcpy(initString, strTX_ADDR, size);
-    sendSPI1string(initString, size);
+    //sendSPI1string(initString, size);
 
     // Send RX_ADDR_PO
-    initString[0] = 0x2A; // Same address but different register
-    sendSPI1string(initString, size);
+    LDPageWriteSPI(0x2A, strTX_ADDR, size);
+    //initString[0] = 0x2A; // Same address but different register
+    //sendSPI1string(initString, size);
     
     // Setup retry delay and number of retries
-    initString[0] = 0x24;       // Write to SETUP_RETR register
-    initString[1] = 0b00100011; // Delay 75us 3 retries
-    size = 2;
-    sendSPI1string(initString, size);
+    // Write to SETUP_RETR register
+    // Delay 75us 3 retries
+    LDByteWriteSPI(0x24, 0b00100011);
+    // Flush buffers and clear flags in case of nRF not being in POR state
+    // Device is only reset when power is removed, not when uC is reset
+    LDCommandWriteSPI(0xE1);            // Flush TX buffer
+    LDCommandWriteSPI(0xE2);            // Flush RX buffer
+    LDByteWriteSPI(0x27, 0b01110000);  //clear RX_DR, TX_DS and MAX_RT
+
+}
+void InitMPU6050(unsigned char I2Caddr)
+{
+    LDByteWriteI2C(I2Caddr, 0x6B, 0x00); // Wakeup MPU6050
+    /* ACCEL_CONFIG 0x1C selftest and Full Scale Range
+     0b00000000 -> 2g
+     0b00001000 -> 4g
+     0b00010000 -> 8g
+     0b00011000 -> 16g                                                        */
+    LDByteWriteI2C(I2Caddr, 0x1C, 0b00001000); // FSR 4g
+    /* GYRO_CONFIG 0x1B selftest and Full Scale Range
+     0b00000000 -> 250 deg/s
+     0b00001000 -> 500 deg/s
+     0b00010000 -> 1000 deg/s
+     0b00011000 -> 2000 deg/s                                                 */
+    LDByteWriteI2C(I2Caddr, 0x1B, 0b00010000); // FSR 1000 deg/s
+}
+void InitHMC5883L(void)
+{
+    LDByteWriteI2C(0x3C, 0x00, 0b01111000); // Configuration Register A
+    /* 8 averages, 75 Hz, Normal measurement(no bias)                         */
+    LDByteWriteI2C(0x3C, 0x01, 0b00100000); // Configuration Register B
+    /* Gain setting 1.3Gauss range                                            */
+    LDByteWriteI2C(0x3C, 0x02, 0b00000000); // Mode Register
+    /* Set in continuos mesurement mode                                       */
 
 }
