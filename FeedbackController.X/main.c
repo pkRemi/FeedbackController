@@ -266,6 +266,14 @@ void readSensorData(void)
     }
 
 }
+/********************************************************************
+*     Function Name:    readCompassData                             *
+*     Parameters:       none.                                       *
+*     Description:      Reads Compass sensor data via I2C and       *
+*                       stores the values in rawcompass and         *
+*                       compass global variables                    *
+*                                                                   *
+********************************************************************/
 void readCompassData(void)
 {
 
