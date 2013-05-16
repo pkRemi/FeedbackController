@@ -157,16 +157,16 @@ int16_t main(void)
         setRawData2string();
         //serString[21] = delay; // Add the calculated delay between steps (dont work is float!)
         /**** Telemetry string format for command=0x42 ************************/
-        /** command, axh, axl, ayh, ayl, azh, azl, th, tl,             8byte **/
+        /** command, axh, axl, ayh, ayl, azh, azl, th, tl,             9byte **/
         /** gxh, gxl, gyh, gyl, gzh, gzl, cxh, cxl, cyh, cyl, czh, czl,12byte**/
-        /**   --Total 20byte                                                 **/
+        /**   --Total 21byte                                                 **/
         /** Send telemetry ****************************************************/
 
         LDByteWriteSPI(0x27, 0b00010000);  // clear MAX_RT (max retries)
         LDCommandWriteSPI(0xE1);           // Flush TX buffer (tx buffer contains last failed transmission)
         LDByteWriteSPI(0x27, 0b00100000);  // clear TX_DS (ACK received)
 
-        sendnRFstring( serString, 20);
+        sendnRFstring( serString, 21);
 
         //        serStringN = sprintf(serString, "Sensor reading: %d \n\r", Data);
         TemperatureC = (TemperatureRAW)/340+36.53;
