@@ -80,7 +80,7 @@ int16_t main(void)
     /* Initialize IO ports and peripherals */
     InitApp();
     //initSerial();
-    _LATB4 = 1;
+    
     initSPI1();
 
     InitI2C();
@@ -104,6 +104,10 @@ int16_t main(void)
     delaytime = 1;
     bool mode = 0;
     while(1)
+    {
+        __delay32(1);
+    }
+    while(0)
     {
 //        _LATA4 = 1;
         __delay32(1600000);
@@ -516,8 +520,22 @@ void __attribute__((__interrupt__, __auto_psv__)) _T1Interrupt(void)
 
     // Toggle LED on RD1
     _LATA4 = 1;
-    //PR1 = axdelay;
-    //_LATD3 = axdir;
+    /** Read sensors ******************************************************/
+    readSensorData();
+    __delay32(1000); // Without this delay, the I2C command acts funny...
+    /** Prepare telemetry *************************************************/
+    setRawData2string();
+    /**** Telemetry string format for command=0x42 ************************/
+    /** command, axh, axl, ayh, ayl, azh, azl, th, tl,             9byte **/
+    /** gxh, gxl, gyh, gyl, gzh, gzl, cxh, cxl, cyh, cyl, czh, czl,12byte**/
+    /**   --Total 21byte                                                 **/
+    /** Send telemetry ****************************************************/
+    LDByteWriteSPI(0x27, 0b00010000);  // clear MAX_RT (max retries)
+    LDCommandWriteSPI(0xE1);           // Flush TX buffer (tx buffer contains last failed transmission)
+    LDByteWriteSPI(0x27, 0b00100000);  // clear TX_DS (ACK received)
+    sendnRFstring( serString, 21);
+
+
     __delay32(10000);
     _LATA4 = 0;
     _T1IF = 0;  // Clear Timer 1 interrupt flag

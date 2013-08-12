@@ -52,7 +52,7 @@ unsigned int InitI2C(void)
 
 	//I2CBRG = 0x004f;
         I2C1CONbits.I2CEN = 1;               // Enable I2C controller
-        I2C1BRG = 79;                        // Set I2C Clock to 400kHz at 10 MIPS 90 for 100kHz
+        I2C1BRG = 45; //79                        // Set I2C Clock to 400kHz at 10 MIPS 90 for 100kHz
 	//Now we will initialise the I2C peripheral for Master Mode, No Slew Rate
 	//Control, and leave the peripheral switched off.
 	// SCLREL: SCL Release Control bit (when operating as I2C Slave),
@@ -383,7 +383,7 @@ unsigned int HDPageWriteI2C(unsigned char ControlByte, unsigned char HighAdd, un
 unsigned int LDSequentialReadI2C(unsigned char ControlByte, unsigned char address, unsigned char *rdptr, unsigned char length)
 {
 	IdleI2C();						//Ensure Module is Idle
-	StartI2C();						//Initiate start condition
+        StartI2C();						//Initiate start condition
 	WriteI2C(ControlByte);			//write 1 byte
 	IdleI2C();						//Ensure module is Idle
 	WriteI2C(address);				//Write word address
@@ -394,7 +394,7 @@ unsigned int LDSequentialReadI2C(unsigned char ControlByte, unsigned char addres
 	getsI2C(rdptr, length);			//Read in multiple bytes
 	NotAckI2C();					//Send Not Ack
 	StopI2C();						//Send stop condition
-	return(0);
+        return(0);
 }
 
 
@@ -501,12 +501,14 @@ unsigned int getsI2C(unsigned char *rdptr, unsigned char Length)
 {
 	while (Length --)
 	{
+
 		*rdptr++ = getI2C();		//get a single byte
-		
+
 		if(I2C1STATbits.BCL)		//Test for Bus collision
 		{
 			return(-1);
 		}
+
 
 		if(Length)
 		{
@@ -531,9 +533,9 @@ unsigned int getsI2C(unsigned char *rdptr, unsigned char Length)
 unsigned int getI2C(void)
 {
 	I2C1CONbits.RCEN = 1;			//Enable Master receive
-	__delay32(1);
-	while(!I2C1STATbits.RBF);		//Wait for receive bufer to be full
-	return(I2C1RCV);				//Return data in buffer
+	//__delay32(1); // Removed - made the read hang for 59ms smoetimes...
+        while(!I2C1STATbits.RBF);		//Wait for receive bufer to be full
+        return(I2C1RCV);				//Return data in buffer
 }
 
 
