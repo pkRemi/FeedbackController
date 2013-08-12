@@ -61,8 +61,8 @@ void SetupInterrupts(void)
     // Period = PR1 * prescaler * Tcy = 78 * 256 * 100ns = 2ms
 
     T1CON = 0;            // Clear Timer 1 configuration
-    T1CONbits.TCKPS = 2;  // Set timer 1 prescaler (0=1:1, 1=1:8, 2=1:64, 3=1:256)
-    PR1 = 78;             // Set Timer 1 period (max value is 65535)
+    T1CONbits.TCKPS = 3;  // Set timer 1 prescaler (0=1:1, 1=1:8, 2=1:64, 3=1:256)
+    PR1 = 600;             // Set Timer 1 period (max value is 65535) about 100Hz
     _T1IP = 1;            // Set Timer 1 interrupt priority
     _T1IF = 0;            // Clear Timer 1 interrupt flag
     _T1IE = 1;            // Enable Timer 1 interrupt

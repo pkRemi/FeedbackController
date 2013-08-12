@@ -188,14 +188,15 @@ unsigned int LDByteWriteI2C(unsigned char ControlByte, unsigned char LowAdd, uns
 	unsigned int ErrorCode;
 
 	IdleI2C();						//Ensure Module is Idle
-	StartI2C();						//Generate Start COndition
-	WriteI2C(ControlByte);			//Write Control byte
+        StartI2C();						//Generate Start COndition
+        WriteI2C(ControlByte);			//Write Control byte
 	IdleI2C();
 
 	ErrorCode = ACKStatus();		//Return ACK Status
 	
 	WriteI2C(LowAdd);				//Write Low Address
 	IdleI2C();
+
 
 	ErrorCode = ACKStatus();		//Return ACK Status
 

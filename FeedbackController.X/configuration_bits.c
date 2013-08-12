@@ -36,11 +36,40 @@
 
 // PIC24FJ48GA002 Configuration Bit Settings
 
+////#include <p24Fxxxx.h>
+////
+//// int CONFIG2 __attribute__((space(prog), address(0x83FC))) = 0x7BED ;
+//////_CONFIG2(
+//////    POSCMOD_XT &         // Primary Oscillator Select (XT Oscillator mode selected)
+//////    I2C1SEL_PRI &        // I2C1 Pin Location Select (Use default SCL1/SDA1 pins)
+//////    IOL1WAY_OFF &        // IOLOCK Protection (IOLOCK may be changed via unlocking seq)
+//////    OSCIOFNC_OFF &       // Primary Oscillator Output Function (OSC2/CLKO/RC15 functions as CLKO (FOSC/2))
+//////    FCKSM_CSDCMD &       // Clock Switching and Monitor (Clock switching and Fail-Safe Clock Monitor are disabled)
+//////    FNOSC_PRIPLL &       // Oscillator Select (Primary Oscillator with PLL module (HSPLL, ECPLL))
+//////    SOSCSEL_SOSC &       // Sec Oscillator Select (Default Secondary Oscillator (SOSC))
+//////    WUTSEL_LEG &         // Wake-up timer Select (Legacy Wake-up Timer)
+//////    IESO_OFF             // Internal External Switch Over Mode (IESO mode (Two-Speed Start-up) disabled)
+//////);
+//// int CONFIG1 __attribute__((space(prog), address(0x83FE))) = 0x3F7F ;
+//////_CONFIG1(
+//////    WDTPS_PS32768 &      // Watchdog Timer Postscaler (1:32,768)
+//////    FWPSA_PR128 &        // WDT Prescaler (Prescaler ratio of 1:128)
+//////    WINDIS_ON &          // Watchdog Timer Window (Standard Watchdog Timer enabled,(Windowed-mode is disabled))
+//////    FWDTEN_OFF &         // Watchdog Timer Enable (Watchdog Timer is disabled)
+//////    ICS_PGx1 &           // Comm Channel Select (Emulator EMUC1/EMUD1 pins are shared with PGC1/PGD1)
+//////    GWRP_OFF &           // General Code Segment Write Protect (Writes to program memory are allowed)
+//////    GCP_OFF &            // General Code Segment Code Protect (Code protection is disabled)
+//////    JTAGEN_OFF           // JTAG Port Enable (JTAG port is disabled)
+//////);
+
+
+// PIC24FJ48GA002 Configuration Bit Settings
+
 #include <p24Fxxxx.h>
 
- int CONFIG2 __attribute__((space(prog), address(0x83FC))) = 0x7BED ;
+ int CONFIG2 __attribute__((space(prog), address(0x83FC))) = 0x7BEE ;
 //_CONFIG2(
-//    POSCMOD_XT &         // Primary Oscillator Select (XT Oscillator mode selected)
+//    POSCMOD_HS &         // Primary Oscillator Select (HS Oscillator mode selected)
 //    I2C1SEL_PRI &        // I2C1 Pin Location Select (Use default SCL1/SDA1 pins)
 //    IOL1WAY_OFF &        // IOLOCK Protection (IOLOCK may be changed via unlocking seq)
 //    OSCIOFNC_OFF &       // Primary Oscillator Output Function (OSC2/CLKO/RC15 functions as CLKO (FOSC/2))
@@ -50,14 +79,15 @@
 //    WUTSEL_LEG &         // Wake-up timer Select (Legacy Wake-up Timer)
 //    IESO_OFF             // Internal External Switch Over Mode (IESO mode (Two-Speed Start-up) disabled)
 //);
- int CONFIG1 __attribute__((space(prog), address(0x83FE))) = 0x3F7F ;
+ int CONFIG1 __attribute__((space(prog), address(0x83FE))) = 0x3F3F ;
 //_CONFIG1(
 //    WDTPS_PS32768 &      // Watchdog Timer Postscaler (1:32,768)
 //    FWPSA_PR128 &        // WDT Prescaler (Prescaler ratio of 1:128)
-//    WINDIS_ON &          // Watchdog Timer Window (Standard Watchdog Timer enabled,(Windowed-mode is disabled))
+//    WINDIS_OFF &         // Watchdog Timer Window (Windowed Watchdog Timer enabled; FWDTEN must be 1)
 //    FWDTEN_OFF &         // Watchdog Timer Enable (Watchdog Timer is disabled)
 //    ICS_PGx1 &           // Comm Channel Select (Emulator EMUC1/EMUD1 pins are shared with PGC1/PGD1)
 //    GWRP_OFF &           // General Code Segment Write Protect (Writes to program memory are allowed)
 //    GCP_OFF &            // General Code Segment Code Protect (Code protection is disabled)
 //    JTAGEN_OFF           // JTAG Port Enable (JTAG port is disabled)
 //);
+

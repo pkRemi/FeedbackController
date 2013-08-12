@@ -13,6 +13,7 @@
 #include "system.h"        /* System funct/params, like osc/peripheral config */
 #include "user.h"          /* User funct/params, such as InitApp              */
 #include "i2c.h"           /* I2C functions                                   */
+
 /******************************************************************************/
 /* Function Prototypes                                                        */
 /******************************************************************************/
@@ -76,34 +77,42 @@ int16_t main(void)
 
     /* Configure the oscillator for the device */
     ConfigureOscillator();
-
     /* Initialize IO ports and peripherals */
     InitApp();
-    initSerial();
+    //initSerial();
+    _LATB4 = 1;
     initSPI1();
+
     InitI2C();
+
+    //_LATB4 = 0;
     __delay32(1600000); // allow for POR for all devices
+
     initnRF();
+
+
     ControlByte = 0x00D0; // mpu6050 address
+
     InitMPU6050(ControlByte);
-    InitHMC5883L();
+
+//    InitHMC5883L();
     SetupInterrupts();
    
     int serStringN = 14;
     char nRFstatus = 0;
-    int i;
+//    int i;
     delaytime = 1;
     bool mode = 0;
     while(1)
     {
-        //_LATA4 = 1;
-        __delay32(160000);
+//        _LATA4 = 1;
+        __delay32(1600000);
 //                for (i = 0; i < serStringN; i = i++)
 //        {
 //            //while(!U1STAbits.TRMT);
 //            //U1TXREG = serString[i];
 //        }
-        //_LATA4 = 0;
+//        _LATA4 = 0;
         __delay32(1600);
         if(mode)
         {
@@ -133,23 +142,20 @@ int16_t main(void)
             //rfStatLED = 0;
         }
 
-
-
-
  //        _LATD0 = 0;
         __delay32(delaytime);
 //        _LATD0 = 1;
         /* Send serial data to PC */
-        for (i = 0; i < serStringN; i = i++)
-        {
-            while(!U1STAbits.TRMT);
-            U1TXREG = serString[i];
-        }
-        __delay32(16000); // Without this delay after U1TXREG, the I2C command acts funny...
+//        for (i = 0; i < serStringN; i = i++)
+//        {
+//            while(!U1STAbits.TRMT);
+//            U1TXREG = serString[i];
+//        }
+//        __delay32(16000); // Without this delay after U1TXREG, the I2C command acts funny...
         /** Read sensors ******************************************************/
         readSensorData();
         __delay32(1000); // Without this delay, the I2C command acts funny...
-        readCompassData();
+//        readCompassData();
         /** Feedback computation **********************************************/
         GyroZaverage();
         Pcontroller();
@@ -172,11 +178,11 @@ int16_t main(void)
         TemperatureC = (TemperatureRAW)/340+36.53;
         /* The following sprintf command takes 18.744ms or 187440 instructions!!! */
 //        serStringN = sprintf(serString, "Sensor: %04X Accel: %04X %04X %04X Gyro: %04X %04X %04X\n\r",
-        serStringN = sprintf(serString, "T: %3.0f Acc: %05d %05d %05d Gyro: %05d %05d %05d Compass: %05d %05d %05d\n\r",
-                TemperatureC,
-                accel[0], accel[1], accel[2],
-                gyro[0], gyro[1], gyro[2],
-                compass[0],compass[1], compass[2]);
+//        serStringN = sprintf(serString, "T: %3.0f Acc: %05d %05d %05d Gyro: %05d %05d %05d Compass: %05d %05d %05d\n\r",
+//                TemperatureC,
+//                accel[0], accel[1], accel[2],
+//                gyro[0], gyro[1], gyro[2],
+//                compass[0],compass[1], compass[2]);
         __delay32(delaytime);
     }
 }
@@ -509,12 +515,12 @@ void __attribute__((__interrupt__, __auto_psv__)) _T1Interrupt(void)
 {
 
     // Toggle LED on RD1
-    _LATA4 = 1 - _LATA4;
-    PR1 = axdelay;
+    _LATA4 = 1;
+    //PR1 = axdelay;
     //_LATD3 = axdir;
-    // Clear Timer 1 interrupt flag
-    _T1IF = 0;
-
+    __delay32(10000);
+    _LATA4 = 0;
+    _T1IF = 0;  // Clear Timer 1 interrupt flag
 
 }
 

@@ -135,12 +135,15 @@ void initnRF(void)
 }
 void InitMPU6050(unsigned char I2Caddr)
 {
+
+
     LDByteWriteI2C(I2Caddr, 0x6B, 0x00); // Wakeup MPU6050
     /* ACCEL_CONFIG 0x1C selftest and Full Scale Range
      0b00000000 -> 2g
      0b00001000 -> 4g
      0b00010000 -> 8g
      0b00011000 -> 16g                                                        */
+
     LDByteWriteI2C(I2Caddr, 0x1C, 0b00001000); // FSR 4g
     /* GYRO_CONFIG 0x1B selftest and Full Scale Range
      0b00000000 -> 250 deg/s
