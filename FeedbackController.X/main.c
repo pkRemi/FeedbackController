@@ -27,6 +27,9 @@ unsigned char LDBytePollnRF();
 void getsSPI( unsigned char *rdptr, unsigned char length );
 void PutStringSPI( unsigned char *wrptr , unsigned char strlength);
 unsigned int ReadSPI1();
+void WriteSPI2(unsigned int data_out);
+void CalibrateGyro(void);   /* Finding Gyro Offsett                           */
+void AverageFilter(void);
 
 void Pcontroller(void);
 void Speed2Delay(float speed);
@@ -68,6 +71,15 @@ int axdir = 0;
 unsigned char rawcompass[6];
 int compass[3];
 float delay = 0;
+float angle = 1.747;
+signed int xSpeed = -123;
+signed int ySpeed = 123;
+signed long GyroOffset[3] = {0,0,0};
+signed long AccelOffset[3] = {0,0,0};
+signed int axFilterAverage[32] = {0};
+unsigned int axFilterPoint = 0;
+signed int axFilterAveraged = 0;
+
 /******************************************************************************/
 /* Main Program                                                               */
 /******************************************************************************/
@@ -80,115 +92,108 @@ int16_t main(void)
     /* Initialize IO ports and peripherals */
     InitApp();
     //initSerial();
-    
     initSPI1();
-
+    initSPI2();
     InitI2C();
-
-    //_LATB4 = 0;
     __delay32(1600000); // allow for POR for all devices
-
     initnRF();
-
-
     ControlByte = 0x00D0; // mpu6050 address
-
     InitMPU6050(ControlByte);
-
 //    InitHMC5883L();
+    CalibrateGyro();    // Finding the gyro zero-offset
     SetupInterrupts();
    
-    int serStringN = 14;
-    char nRFstatus = 0;
-//    int i;
-    delaytime = 1;
-    bool mode = 0;
+//////    int serStringN = 14;
+//////    char nRFstatus = 0;
+////////    int i;
+//////    delaytime = 1;
+//////    bool mode = 0;
     while(1)
     {
         __delay32(1);
     }
-    while(0)
-    {
-//        _LATA4 = 1;
-        __delay32(1600000);
-//                for (i = 0; i < serStringN; i = i++)
-//        {
-//            //while(!U1STAbits.TRMT);
-//            //U1TXREG = serString[i];
-//        }
-//        _LATA4 = 0;
-        __delay32(1600);
-        if(mode)
-        {
-            nRFstatus = LDBytePollnRF();
-            if(nRFstatus & 0b00010000) //MAX_RT
-            {
-                //rfStatLED = 0;
-                LDByteWriteSPI(0x27, 0b00010000);  //clear MAX_RT
-            }
-            if(nRFstatus & 0b00100000) //TX_DS
-            {
-                rfStatLED = 1;
-                LDByteWriteSPI(0x27, 0b00100000);  //clear TX_DS
-            }
-        }
-        if(button1)
-        {
-            rfStatLED = 1;
-            __delay32(15000000);
-            rfStatLED = 0;
-            sendnRFstring( serString, serStringN);
-            
-            mode = 1;
-        }
-        else
-        {
-            //rfStatLED = 0;
-        }
-
- //        _LATD0 = 0;
-        __delay32(delaytime);
-//        _LATD0 = 1;
-        /* Send serial data to PC */
-//        for (i = 0; i < serStringN; i = i++)
-//        {
-//            while(!U1STAbits.TRMT);
-//            U1TXREG = serString[i];
-//        }
-//        __delay32(16000); // Without this delay after U1TXREG, the I2C command acts funny...
-        /** Read sensors ******************************************************/
-        readSensorData();
-        __delay32(1000); // Without this delay, the I2C command acts funny...
-//        readCompassData();
-        /** Feedback computation **********************************************/
-        GyroZaverage();
-        Pcontroller();
-        /** Prepare telemetry *************************************************/
-        setRawData2string();
-        //serString[21] = delay; // Add the calculated delay between steps (dont work is float!)
-        /**** Telemetry string format for command=0x42 ************************/
-        /** command, axh, axl, ayh, ayl, azh, azl, th, tl,             9byte **/
-        /** gxh, gxl, gyh, gyl, gzh, gzl, cxh, cxl, cyh, cyl, czh, czl,12byte**/
-        /**   --Total 21byte                                                 **/
-        /** Send telemetry ****************************************************/
-
-        LDByteWriteSPI(0x27, 0b00010000);  // clear MAX_RT (max retries)
-        LDCommandWriteSPI(0xE1);           // Flush TX buffer (tx buffer contains last failed transmission)
-        LDByteWriteSPI(0x27, 0b00100000);  // clear TX_DS (ACK received)
-
-        sendnRFstring( serString, 21);
-
-        //        serStringN = sprintf(serString, "Sensor reading: %d \n\r", Data);
-        TemperatureC = (TemperatureRAW)/340+36.53;
-        /* The following sprintf command takes 18.744ms or 187440 instructions!!! */
-//        serStringN = sprintf(serString, "Sensor: %04X Accel: %04X %04X %04X Gyro: %04X %04X %04X\n\r",
-//        serStringN = sprintf(serString, "T: %3.0f Acc: %05d %05d %05d Gyro: %05d %05d %05d Compass: %05d %05d %05d\n\r",
-//                TemperatureC,
-//                accel[0], accel[1], accel[2],
-//                gyro[0], gyro[1], gyro[2],
-//                compass[0],compass[1], compass[2]);
-        __delay32(delaytime);
-    }
+//////    while(0)
+//////    {
+////////        _LATA4 = 1;
+//////        __delay32(1600000);
+////////                for (i = 0; i < serStringN; i = i++)
+////////        {
+////////            //while(!U1STAbits.TRMT);
+////////            //U1TXREG = serString[i];
+////////        }
+////////        _LATA4 = 0;
+//////        __delay32(1600);
+//////        if(mode)
+//////        {
+//////            nRFstatus = LDBytePollnRF();
+//////            if(nRFstatus & 0b00010000) //MAX_RT
+//////            {
+//////                //rfStatLED = 0;
+//////                LDByteWriteSPI(0x27, 0b00010000);  //clear MAX_RT
+//////            }
+//////            if(nRFstatus & 0b00100000) //TX_DS
+//////            {
+//////                rfStatLED = 1;
+//////                LDByteWriteSPI(0x27, 0b00100000);  //clear TX_DS
+//////            }
+//////        }
+//////        if(button1)
+//////        {
+//////            rfStatLED = 1;
+//////            __delay32(15000000);
+//////            rfStatLED = 0;
+//////            sendnRFstring( serString, serStringN);
+//////
+//////            mode = 1;
+//////        }
+//////        else
+//////        {
+//////            //rfStatLED = 0;
+//////        }
+//////
+////// //        _LATD0 = 0;
+//////        __delay32(delaytime);
+////////        _LATD0 = 1;
+//////        /* Send serial data to PC */
+////////        for (i = 0; i < serStringN; i = i++)
+////////        {
+////////            while(!U1STAbits.TRMT);
+////////            U1TXREG = serString[i];
+////////        }
+////////        __delay32(16000); // Without this delay after U1TXREG, the I2C command acts funny...
+//////        /** Read sensors ******************************************************/
+//////        readSensorData();
+//////        __delay32(1000); // Without this delay, the I2C command acts funny...
+////////        readCompassData();
+//////        /** Feedback computation **********************************************/
+//////        GyroZaverage();
+//////        Pcontroller();
+//////        /** Prepare telemetry *************************************************/
+//////        setRawData2string();
+//////        //serString[21] = delay; // Add the calculated delay between steps (dont work is float!)
+//////        /**** Telemetry string format for command=0x42 ************************/
+//////        /** command, axh, axl, ayh, ayl, azh, azl, th, tl,             9byte **/
+//////        /** gxh, gxl, gyh, gyl, gzh, gzl, cxh, cxl, cyh, cyl, czh, czl,12byte**/
+//////        /**   --Total 21byte                                                 **/
+//////        /** Send telemetry ****************************************************/
+//////
+//////        LDByteWriteSPI(0x27, 0b00010000);  // clear MAX_RT (max retries)
+//////        LDCommandWriteSPI(0xE1);           // Flush TX buffer (tx buffer contains last failed transmission)
+//////        LDByteWriteSPI(0x27, 0b00100000);  // clear TX_DS (ACK received)
+//////
+//////        sendnRFstring( serString, 21);
+//////
+//////        //        serStringN = sprintf(serString, "Sensor reading: %d \n\r", Data);
+//////        TemperatureC = (TemperatureRAW)/340+36.53;
+//////        /* The following sprintf command takes 18.744ms or 187440 instructions!!! */
+////////        serStringN = sprintf(serString, "Sensor: %04X Accel: %04X %04X %04X Gyro: %04X %04X %04X\n\r",
+////////        serStringN = sprintf(serString, "T: %3.0f Acc: %05d %05d %05d Gyro: %05d %05d %05d Compass: %05d %05d %05d\n\r",
+////////                TemperatureC,
+////////                accel[0], accel[1], accel[2],
+////////                gyro[0], gyro[1], gyro[2],
+////////                compass[0],compass[1], compass[2]);
+//////        __delay32(delaytime);
+//////    }
 }
 
 
@@ -496,7 +501,53 @@ void getsSPI( unsigned char *rdptr, unsigned char length )
     length--;                       // reduce string length count by 1
   }
 }
+/********************************************************************
+*     Function Name : WriteSPI2                                     *
+*     Description   : This routine writes a single byte/word to     *
+*                     the SPI bus.                                  *
+*     Parameters    : Single data byte/word for SPI bus             *
+*     Return Value  : None                                          *
+********************************************************************/
 
+void WriteSPI2(unsigned int data_out)
+{
+    if (SPI2CON1bits.MODE16)          /* word write */
+        SPI2BUF = data_out;
+    else
+        SPI2BUF = data_out & 0xff;    /*  byte write  */
+    while(SPI2STATbits.SPITBF);
+    while(!SPI2STATbits.SPIRBF);
+    data_out = SPI2BUF;               //Avoiding overflow when reading
+}
+void CalibrateGyro(void)
+{
+    int i;
+    int ii;
+    GyroOffset[0] = 0;
+    GyroOffset[1] = 0;
+    GyroOffset[2] = 0;
+    AccelOffset[0] = 0;
+    AccelOffset[1] = 0;
+    AccelOffset[2] = 0;
+
+    for (i=0;i<128;i++)
+    {
+        /** Read sensors ******************************************************/
+        readSensorData();
+        __delay32(1000); // Without this delay, the I2C command acts funny...
+        for (ii=0;ii<3;ii++)
+        {
+            GyroOffset[ii] = GyroOffset[ii] + gyro[ii];
+            AccelOffset[ii] = AccelOffset[ii] + accel[ii];
+        }
+    }
+    for (ii=0;ii<3;ii++)
+    {
+        GyroOffset[ii] = GyroOffset[ii]/128;
+        AccelOffset[ii] = AccelOffset[ii]/128;
+    }
+
+}
 /******************************************************************************/
 /* Default Interrupt Handler                                                  */
 /*                                                                            */
@@ -517,8 +568,9 @@ void __attribute__((__interrupt__, __auto_psv__)) _SPI1Interrupt(void)
 // Timer 1 interrupt service routine toggles LED on RD1
 void __attribute__((__interrupt__, __auto_psv__)) _T1Interrupt(void)
 {
-
-    // Toggle LED on RD1
+    unsigned int *chptr;                // For sending a float value
+    signed int filtered;
+    // Toggle LED
     _LATA4 = 1;
     /** Read sensors ******************************************************/
     readSensorData();
@@ -529,16 +581,53 @@ void __attribute__((__interrupt__, __auto_psv__)) _T1Interrupt(void)
     /** command, axh, axl, ayh, ayl, azh, azl, th, tl,             9byte **/
     /** gxh, gxl, gyh, gyl, gzh, gzl, cxh, cxl, cyh, cyl, czh, czl,12byte**/
     /**   --Total 21byte                                                 **/
+
+    AverageFilter();
+    //filtered = gyro[0] - GyroOffset[0];
+    filtered = axFilterAveraged;
+    serString[16] = filtered & 0xFF;
+    serString[15] = filtered >> 8;
+    serString[18] = accel[0] & 0xFF;
+    serString[17] = accel[0] >> 8;
     /** Send telemetry ****************************************************/
     LDByteWriteSPI(0x27, 0b00010000);  // clear MAX_RT (max retries)
     LDCommandWriteSPI(0xE1);           // Flush TX buffer (tx buffer contains last failed transmission)
     LDByteWriteSPI(0x27, 0b00100000);  // clear TX_DS (ACK received)
     sendnRFstring( serString, 21);
+    chptr = (unsigned char *) &angle;  // For sending a float value
+    CS_Axis = 0;
+    /* Command: MSB
+     * 15: 0 = NO Speed Values
+     * 14: 1 = Enable Stepper Driver
+     * 13: 
+     */
+    WriteSPI2(0b1000000000000000);      // Command: MSB
+    WriteSPI2(xSpeed);                  // Send x-velocity vector
+    WriteSPI2(ySpeed);                  // Send y-velocity vector
+    WriteSPI2(*chptr++);                // Sending first part of float value
+    WriteSPI2(*chptr++);                // Sending second part of float value
+//    WriteSPI2(GyroOffset[0]);
+//    WriteSPI2(GyroOffset[1]);
+//    WriteSPI2(GyroOffset[2]);
+    CS_Axis = 1;
 
 
-    __delay32(10000);
     _LATA4 = 0;
     _T1IF = 0;  // Clear Timer 1 interrupt flag
 
 }
 
+void AverageFilter(void)
+{
+    int i;
+    long temp = 0;
+    axFilterAverage[axFilterPoint] = accel[0];
+    axFilterPoint++;
+    if (axFilterPoint > 31)
+        axFilterPoint = 0;
+    for (i=0;i<32;i++)
+    {
+        temp = temp + axFilterAverage[i];
+    }
+    axFilterAveraged = temp/32;
+}

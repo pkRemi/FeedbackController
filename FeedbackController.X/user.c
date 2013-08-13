@@ -49,6 +49,14 @@ void InitApp(void)
     TRISBbits.TRISB15 = 0;      // Set RB15 pin 26 to output CE
     CS_nRF = 1;                // Set /CS high
     TRISBbits.TRISB11 = 0;      // /CS for nRF
+
+    // SPI2 input
+    RPINR22bits.SDI2R = 6;     // SPI2 Data Input MISO RP6 pin 15
+    // SPI2 outputs
+    RPOR1bits.RP3R = 10;     // MOSI SDO2 to RP3 pin 7
+    RPOR2bits.RP5R = 11;     // SCK2OUT to RP5 pin 14
+    CS_Axis = 1;             // Set /CS high
+    TRISBbits.TRISB2 = 0;    // /CS for Axis as output
     //__builtin_write_OSCCONL(0x46);
     //__builtin_write_OSCCONL(0x57);
 
@@ -101,7 +109,35 @@ void initSPI1(void)
     IEC0bits.SPI1IE = 0;        // Disable SPI1 interrupt
 
 }
+void initSPI2(void)
+{
+    // RP pin configurations are set in InitApp
+    SPI2STATbits.SPIEN = 0;     // Disable SPI1 before configuration
+    SPI2CON1bits.DISSCK = 0;    // Internal SPIx clock is enabled
+    SPI2CON1bits.DISSDO = 0;    // SDOx pin is controlled by the module
+    SPI2CON1bits.MODE16 = 1;    // Communication is word-wide (16 bits)
+    SPI2CON1bits.SMP = 0;       // Input data sampled at middle of data output time
+    SPI2CON1bits.CKE = 1;       // Serial output data changes on transition from active clock state to Idle clock state (see bit 6)
+    SPI2CON1bits.SSEN = 0;      // SSx pin used for Slave mode
+    SPI2CON1bits.CKP = 0;       // Idle state for clock is a low level; active state is a high level
+    SPI2CON1bits.MSTEN = 1;     // Master mode
+    SPI2CON1bits.SPRE = 0b111;  // 111 = Secondary prescale 1:1
+    SPI2CON1bits.PPRE = 0b01;   // 01 = Primary prescale 16:1 sets SPI to 1MHz
+    SPI2CON2bits.FRMEN = 0;     // Framed SPIx support enabled
+    SPI2CON2bits.SPIFSD = 0;    // Frame sync pulse output (master)
+    SPI2CON2bits.SPIFPOL = 0;   // Frame sync pulse is active-low
+    SPI2CON2bits.SPIFE = 0;     // 0 = Frame sync pulse precedes first bit clock (not used)
+    SPI2CON2bits.SPIBEN = 0;    // Enhanced Buffer disabled
+    SPI2STATbits.SPIROV = 0;    // No overflow
+    SPI2STATbits.SISEL = 0b00; // 000 = Interrupt when the last data in the receive buffer is read, as a result, the buffer is empty (SRXMPTbit set)
+    /* TODO Change CS here */
+    CS_nRF = 1;                // Set /CS high
+    SPI2STATbits.SPIEN = 1;     // Enable SPI1 after configuration
+    // Setup interrupt
+    IFS2bits.SPI2IF = 0;        // Reset interrupt flag
+    IEC2bits.SPI2IE = 0;        // Disable SPI2 interrupt
 
+}
 void initnRF(void)
 {
     static const char strTX_ADDR[5] = {0xa5, 0xd6, 0x65, 0xcb, 0x2a};
@@ -151,6 +187,15 @@ void InitMPU6050(unsigned char I2Caddr)
      0b00010000 -> 1000 deg/s
      0b00011000 -> 2000 deg/s                                                 */
     LDByteWriteI2C(I2Caddr, 0x1B, 0b00010000); // FSR 1000 deg/s
+    /* GYRO_CONFIG 0x1A Low Pass Filter
+     * 0 ->  0.0 ms
+     * 1 ->  2.0 ms
+     * 2 ->  3.0 ms
+     * 3 ->  4.9 ms
+     * 4 ->  8.5 ms
+     * 5 -> 13.8 ms
+     * 6 -> 19.0 ms                                               */
+    LDByteWriteI2C(I2Caddr, 0x1A, 0); // 8.5 ms
 }
 void InitHMC5883L(void)
 {
