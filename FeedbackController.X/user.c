@@ -195,7 +195,7 @@ void InitMPU6050(unsigned char I2Caddr)
      * 4 ->  8.5 ms
      * 5 -> 13.8 ms
      * 6 -> 19.0 ms                                               */
-    LDByteWriteI2C(I2Caddr, 0x1A, 0); // 8.5 ms
+    LDByteWriteI2C(I2Caddr, 0x1A, 5); // 8.5 ms
 }
 void InitHMC5883L(void)
 {

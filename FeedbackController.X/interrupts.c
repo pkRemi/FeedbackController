@@ -62,7 +62,7 @@ void SetupInterrupts(void)
 
     T1CON = 0;            // Clear Timer 1 configuration
     T1CONbits.TCKPS = 3;  // Set timer 1 prescaler (0=1:1, 1=1:8, 2=1:64, 3=1:256)
-    PR1 = 500;             // Set Timer 1 period (max value is 65535) about 100Hz
+    PR1 = 2800;             // 500 Set Timer 1 period (max value is 65535) about 100Hz
     _T1IP = 1;            // Set Timer 1 interrupt priority
     _T1IF = 0;            // Clear Timer 1 interrupt flag
     _T1IE = 1;            // Enable Timer 1 interrupt

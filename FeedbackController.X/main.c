@@ -30,6 +30,7 @@ unsigned int ReadSPI1();
 void WriteSPI2(unsigned int data_out);
 void CalibrateGyro(void);   /* Finding Gyro Offsett                           */
 void AverageFilter(void);
+int FeedbackControlLoop(int gyro, int gos, int ggain, int accel, int aos, int again);
 
 void Pcontroller(void);
 void Speed2Delay(float speed);
@@ -71,21 +72,26 @@ int axdir = 0;
 unsigned char rawcompass[6];
 int compass[3];
 float delay = 0;
-float angle = 1.747;
-signed int xSpeed = -123;
-signed int ySpeed = 123;
+float angle = 0;
+signed int xSpeed = 0;
+signed int ySpeed = 0;
 signed long GyroOffset[3] = {0,0,0};
 signed long AccelOffset[3] = {0,0,0};
+signed long GyroGain[3] = {16,16,16};
+signed long AccelGain[3] = {16,16,16};
 signed int axFilterAverage[32] = {0};
 unsigned int axFilterPoint = 0;
 signed int axFilterAveraged = 0;
-
+bool enableSteppers = 0;
 /******************************************************************************/
 /* Main Program                                                               */
 /******************************************************************************/
 
 int16_t main(void)
 {
+
+    unsigned int buttonCounter = 20000;
+    unsigned int buttonState = 0;
 
     /* Configure the oscillator for the device */
     ConfigureOscillator();
@@ -110,7 +116,38 @@ int16_t main(void)
 //////    bool mode = 0;
     while(1)
     {
-        __delay32(1);
+        /** Read Button RB7 for enable steppers *******************************/
+        if (buttonState == 0 && PORTBbits.RB7 && !buttonCounter)
+        {
+            buttonState = 1;
+            buttonCounter = 20000;
+            enableSteppers = 0;
+        }
+        if (buttonState == 1 && !PORTBbits.RB7 && !buttonCounter)
+        {
+            buttonState = 2;
+            buttonCounter = 20000;
+            __delay32(40000000);
+            enableSteppers = 1;
+        }
+        if (buttonState == 2 && PORTBbits.RB7 && !buttonCounter)
+        {
+            buttonState = 3;
+            buttonCounter = 20000;
+            enableSteppers = 0;
+        }
+        if (buttonState == 3 && !PORTBbits.RB7 && !buttonCounter)
+        {
+            buttonState = 0;
+            buttonCounter = 20000;
+            enableSteppers = 0;
+        }
+        if (buttonCounter)
+        {
+            buttonCounter--;
+        }
+
+        __delay32(100);
     }
 //////    while(0)
 //////    {
@@ -565,16 +602,26 @@ void __attribute__((__interrupt__, __auto_psv__)) _SPI1Interrupt(void)
 //    IFS0bits.SPI1IF = 0;
     
 }
-// Timer 1 interrupt service routine toggles LED on RD1
+
 void __attribute__((__interrupt__, __auto_psv__)) _T1Interrupt(void)
 {
-    unsigned int *chptr;                // For sending a float value
-    signed int filtered;
+    unsigned int *chptr;           // For sending a float value
+    unsigned int command;          // For sending commands to Axis Converter
     // Toggle LED
     _LATA4 = 1;
     /** Read sensors ******************************************************/
     readSensorData();
     __delay32(1000); // Without this delay, the I2C command acts funny...
+    /** Feedback Loop *****************************************************/
+    xSpeed = FeedbackControlLoop(gyro[1], GyroOffset[1], -GyroGain[1],
+                                 accel[0], AccelOffset[0], AccelGain[0]);
+    ySpeed = FeedbackControlLoop(gyro[0], GyroOffset[0], GyroGain[0],
+                                 accel[1], AccelOffset[1], AccelGain[1]);
+    /** Build command string **********************************************/
+    command = 0b1000000000000000;
+    if (enableSteppers)
+        command = command | 0b0100000000000000;
+
     /** Prepare telemetry *************************************************/
     setRawData2string();
     /**** Telemetry string format for command=0x42 ************************/
@@ -582,26 +629,26 @@ void __attribute__((__interrupt__, __auto_psv__)) _T1Interrupt(void)
     /** gxh, gxl, gyh, gyl, gzh, gzl, cxh, cxl, cyh, cyl, czh, czl,12byte**/
     /**   --Total 21byte                                                 **/
 
-    AverageFilter();
-    //filtered = gyro[0] - GyroOffset[0];
-    filtered = axFilterAveraged;
-    serString[16] = filtered & 0xFF;
-    serString[15] = filtered >> 8;
-    serString[18] = accel[0] & 0xFF;
-    serString[17] = accel[0] >> 8;
+    serString[16] = xSpeed & 0xFF; // Temporary sending additional telemetry
+    serString[15] = xSpeed >> 8;
+    serString[18] = ySpeed & 0xFF;
+    serString[17] = ySpeed >> 8;
+
     /** Send telemetry ****************************************************/
     LDByteWriteSPI(0x27, 0b00010000);  // clear MAX_RT (max retries)
     LDCommandWriteSPI(0xE1);           // Flush TX buffer (tx buffer contains last failed transmission)
     LDByteWriteSPI(0x27, 0b00100000);  // clear TX_DS (ACK received)
     sendnRFstring( serString, 21);
     chptr = (unsigned char *) &angle;  // For sending a float value
+
+    /* Send data to Axis Controller ***************************************/
     CS_Axis = 0;
     /* Command: MSB
      * 15: 0 = NO Speed Values
      * 14: 1 = Enable Stepper Driver
      * 13: 
      */
-    WriteSPI2(0b1000000000000000);      // Command: MSB
+    WriteSPI2(command);                 // Command: MSB
     WriteSPI2(xSpeed);                  // Send x-velocity vector
     WriteSPI2(ySpeed);                  // Send y-velocity vector
     WriteSPI2(*chptr++);                // Sending first part of float value
@@ -616,7 +663,12 @@ void __attribute__((__interrupt__, __auto_psv__)) _T1Interrupt(void)
     _T1IF = 0;  // Clear Timer 1 interrupt flag
 
 }
-
+int FeedbackControlLoop(int gyro, int gos, int ggain, int accel, int aos, int again)
+{
+    int output;
+    output = (((gyro - gos)*ggain) + ((accel - aos)* again))/16;
+    return(output);
+}
 void AverageFilter(void)
 {
     int i;
