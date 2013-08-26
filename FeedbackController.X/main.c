@@ -4,13 +4,13 @@
 
 /* Device header file */
 #include <p24Fxxxx.h>
+#include "system.h"        /* System funct/params, like osc/peripheral config */
 #include <stdint.h>        /* Includes uint16_t definition                    */
 #include <stdbool.h>       /* Includes true/false definition                  */
 #include <libpic30.h>      /* Includes delay definition                       */
 #include <math.h>          /* For double acos(double)                         */
 #include <stdio.h>         /*For text to serial port (remove if notneeded     */
 
-#include "system.h"        /* System funct/params, like osc/peripheral config */
 #include "user.h"          /* User funct/params, such as InitApp              */
 #include "i2c.h"           /* I2C functions                                   */
 
@@ -29,8 +29,11 @@ void PutStringSPI( unsigned char *wrptr , unsigned char strlength);
 unsigned int ReadSPI1();
 void WriteSPI2(unsigned int data_out);
 void CalibrateGyro(void);   /* Finding Gyro Offsett                           */
-void AverageFilter(void);
+//void AverageFilter(void);
 int FeedbackControlLoop(int gyro, int gos, int ggain, int accel, int aos, int again);
+int FeedbackControlLoopPI(int gyro, int ggain, int integrator );
+int saturate(int value, int max);
+void speedFilter(void);
 
 void Pcontroller(void);
 void Speed2Delay(float speed);
@@ -75,14 +78,33 @@ float delay = 0;
 float angle = 0;
 signed int xSpeed = 0;
 signed int ySpeed = 0;
-signed long GyroOffset[3] = {0,0,0};
-signed long AccelOffset[3] = {0,0,0};
-signed long GyroGain[3] = {16,16,16};
+float GyroOffset[3] = {0,0,0};
+
+signed long GyroGain[3] = {40,40,40};
 signed long AccelGain[3] = {16,16,16};
-signed int axFilterAverage[32] = {0};
+signed int xspeedFilter[16] = {0};
+signed int yspeedFilter[16] = {0};
+unsigned int speedFilterPoint = 7;
+unsigned int speedFilterLength = 8;
+signed int accelMax = 600;
+signed int gMax = 600;
+float xgIntegrator = 0;
+float ygIntegrator = 0;
+signed int igain = 1;
+
+volatile double AngleOffset[2];
+volatile double gyroXangle, gyroYangle; // Angle calculate using the gyro
+volatile double compAngleX, compAngleY; // Calculate the angle using a complementary filter
+volatile double compAngleXlast = 0.0;
+volatile double compAngleYlast = 0.0;
+volatile double accXangle, accYangle;
 unsigned int axFilterPoint = 0;
 signed int axFilterAveraged = 0;
 bool enableSteppers = 0;
+int fastSample = 15;
+#define PI 3.1415926
+#define RAD_TO_DEG 57.29577951
+#define SAMPLE_TIME 0.01
 /******************************************************************************/
 /* Main Program                                                               */
 /******************************************************************************/
@@ -92,6 +114,7 @@ int16_t main(void)
 
     unsigned int buttonCounter = 20000;
     unsigned int buttonState = 0;
+    int i;
 
     /* Configure the oscillator for the device */
     ConfigureOscillator();
@@ -106,6 +129,18 @@ int16_t main(void)
     ControlByte = 0x00D0; // mpu6050 address
     InitMPU6050(ControlByte);
 //    InitHMC5883L();
+    __delay_ms(500);
+    /** Init control loop *****************************************************/
+    readSensorData();
+    accXangle = (atan2(accel[0], accel[2])*RAD_TO_DEG);
+    accYangle = (atan2(accel[1], accel[2])*RAD_TO_DEG);
+    gyroXangle = accXangle;
+    gyroYangle = accYangle;
+    compAngleX = accXangle;
+    compAngleY = accYangle;
+    AngleOffset[0] = accXangle;
+    AngleOffset[1] = accYangle;
+
     CalibrateGyro();    // Finding the gyro zero-offset
     SetupInterrupts();
    
@@ -146,91 +181,13 @@ int16_t main(void)
         {
             buttonCounter--;
         }
-
-        __delay32(100);
+        for (i=0;i<100;i++)
+        {
+            i=i;
+        }
+//        __delay32(100);
     }
-//////    while(0)
-//////    {
-////////        _LATA4 = 1;
-//////        __delay32(1600000);
-////////                for (i = 0; i < serStringN; i = i++)
-////////        {
-////////            //while(!U1STAbits.TRMT);
-////////            //U1TXREG = serString[i];
-////////        }
-////////        _LATA4 = 0;
-//////        __delay32(1600);
-//////        if(mode)
-//////        {
-//////            nRFstatus = LDBytePollnRF();
-//////            if(nRFstatus & 0b00010000) //MAX_RT
-//////            {
-//////                //rfStatLED = 0;
-//////                LDByteWriteSPI(0x27, 0b00010000);  //clear MAX_RT
-//////            }
-//////            if(nRFstatus & 0b00100000) //TX_DS
-//////            {
-//////                rfStatLED = 1;
-//////                LDByteWriteSPI(0x27, 0b00100000);  //clear TX_DS
-//////            }
-//////        }
-//////        if(button1)
-//////        {
-//////            rfStatLED = 1;
-//////            __delay32(15000000);
-//////            rfStatLED = 0;
-//////            sendnRFstring( serString, serStringN);
-//////
-//////            mode = 1;
-//////        }
-//////        else
-//////        {
-//////            //rfStatLED = 0;
-//////        }
-//////
-////// //        _LATD0 = 0;
-//////        __delay32(delaytime);
-////////        _LATD0 = 1;
-//////        /* Send serial data to PC */
-////////        for (i = 0; i < serStringN; i = i++)
-////////        {
-////////            while(!U1STAbits.TRMT);
-////////            U1TXREG = serString[i];
-////////        }
-////////        __delay32(16000); // Without this delay after U1TXREG, the I2C command acts funny...
-//////        /** Read sensors ******************************************************/
-//////        readSensorData();
-//////        __delay32(1000); // Without this delay, the I2C command acts funny...
-////////        readCompassData();
-//////        /** Feedback computation **********************************************/
-//////        GyroZaverage();
-//////        Pcontroller();
-//////        /** Prepare telemetry *************************************************/
-//////        setRawData2string();
-//////        //serString[21] = delay; // Add the calculated delay between steps (dont work is float!)
-//////        /**** Telemetry string format for command=0x42 ************************/
-//////        /** command, axh, axl, ayh, ayl, azh, azl, th, tl,             9byte **/
-//////        /** gxh, gxl, gyh, gyl, gzh, gzl, cxh, cxl, cyh, cyl, czh, czl,12byte**/
-//////        /**   --Total 21byte                                                 **/
-//////        /** Send telemetry ****************************************************/
-//////
-//////        LDByteWriteSPI(0x27, 0b00010000);  // clear MAX_RT (max retries)
-//////        LDCommandWriteSPI(0xE1);           // Flush TX buffer (tx buffer contains last failed transmission)
-//////        LDByteWriteSPI(0x27, 0b00100000);  // clear TX_DS (ACK received)
-//////
-//////        sendnRFstring( serString, 21);
-//////
-//////        //        serStringN = sprintf(serString, "Sensor reading: %d \n\r", Data);
-//////        TemperatureC = (TemperatureRAW)/340+36.53;
-//////        /* The following sprintf command takes 18.744ms or 187440 instructions!!! */
-////////        serStringN = sprintf(serString, "Sensor: %04X Accel: %04X %04X %04X Gyro: %04X %04X %04X\n\r",
-////////        serStringN = sprintf(serString, "T: %3.0f Acc: %05d %05d %05d Gyro: %05d %05d %05d Compass: %05d %05d %05d\n\r",
-////////                TemperatureC,
-////////                accel[0], accel[1], accel[2],
-////////                gyro[0], gyro[1], gyro[2],
-////////                compass[0],compass[1], compass[2]);
-//////        __delay32(delaytime);
-//////    }
+
 }
 
 
@@ -290,6 +247,8 @@ void setRawData2string(void)
         ii++;
         serString[ii] = rawcompass[i];
     }
+    serString[5] = 0;
+    serString[6] = 0;
 }
 void readSensorData(void)
 {
@@ -563,27 +522,79 @@ void CalibrateGyro(void)
     GyroOffset[0] = 0;
     GyroOffset[1] = 0;
     GyroOffset[2] = 0;
-    AccelOffset[0] = 0;
-    AccelOffset[1] = 0;
-    AccelOffset[2] = 0;
+    AngleOffset[0] = 0;
+    AngleOffset[1] = 0;
 
-    for (i=0;i<128;i++)
+
+    for (i=0;i<1000;i++)
     {
         /** Read sensors ******************************************************/
         readSensorData();
-        __delay32(1000); // Without this delay, the I2C command acts funny...
+        __delay32(5000); // Without this delay, the I2C command acts funny...
+        accXangle = (atan2(accel[0], accel[2])*RAD_TO_DEG);
+        accYangle = (atan2(accel[1], accel[2])*RAD_TO_DEG);
         for (ii=0;ii<3;ii++)
         {
             GyroOffset[ii] = GyroOffset[ii] + gyro[ii];
-            AccelOffset[ii] = AccelOffset[ii] + accel[ii];
         }
+        AngleOffset[0] += accXangle;
+        AngleOffset[1] += accYangle;
     }
     for (ii=0;ii<3;ii++)
     {
-        GyroOffset[ii] = GyroOffset[ii]/128;
-        AccelOffset[ii] = AccelOffset[ii]/128;
+        GyroOffset[ii] = GyroOffset[ii]/1000;
     }
+    AngleOffset[0] = AngleOffset[0]/1000.0;
+    AngleOffset[1] = AngleOffset[1]/1000.0;
+    gyroXangle = AngleOffset[0];
+    gyroYangle = AngleOffset[1];
+    compAngleX = AngleOffset[0];
+    compAngleY = AngleOffset[1];
+}
+int FeedbackControlLoop(int gyro, int gos, int ggain, int accel, int aos, int again)
+{
+    int output;
+    output = (((gyro - gos)*ggain) + ((accel - aos)* again))/16;
+    return(output);
+}
+int FeedbackControlLoopPI(int gyro, int ggain, int integrator )
+{
+    int output;
+    output = ((gyro * ggain)+integrator * igain);
+}
+//void AverageFilter(void)
+//{
+//    int i;
+//    long temp = 0;
+//    axFilterAverage[axFilterPoint] = accel[0];
+//    axFilterPoint++;
+//    if (axFilterPoint > 31)
+//        axFilterPoint = 0;
+//    for (i=0;i<32;i++)
+//    {
+//        temp = temp + axFilterAverage[i];
+//    }
+//    axFilterAveraged = temp/32;
+//}
+void speedFilter(void)
+{
+    int i;
+    long xtemp = 0;
+    long ytemp = 0;
+    xspeedFilter[speedFilterPoint] = xSpeed;
+    yspeedFilter[speedFilterPoint] = ySpeed;
+    if (speedFilterPoint)
+        speedFilterPoint--;
+    else
+        speedFilterPoint = speedFilterLength-1;
 
+    for (i=0;i<speedFilterLength;i++)
+    {
+        xtemp = xtemp + xspeedFilter[i];
+        ytemp = ytemp + yspeedFilter[i];
+    }
+    xSpeed = xtemp/speedFilterLength;
+    ySpeed = ytemp/speedFilterLength;
 }
 /******************************************************************************/
 /* Default Interrupt Handler                                                  */
@@ -602,25 +613,68 @@ void __attribute__((__interrupt__, __auto_psv__)) _SPI1Interrupt(void)
 //    IFS0bits.SPI1IF = 0;
     
 }
-
+int saturate(int value, int max)
+{
+    if (value>max)
+        return (max);
+    else if (value < -max)
+        return (-max);
+    else
+        return(value);
+}
 void __attribute__((__interrupt__, __auto_psv__)) _T1Interrupt(void)
 {
     unsigned int *chptr;           // For sending a float value
     unsigned int command;          // For sending commands to Axis Converter
+    double gyroXrate, gyroYrate;
+
     // Toggle LED
     _LATA4 = 1;
     /** Read sensors ******************************************************/
     readSensorData();
     __delay32(1000); // Without this delay, the I2C command acts funny...
+    accXangle = ((atan2(accel[0], accel[2]))*RAD_TO_DEG)-AngleOffset[0];
+    accYangle = ((atan2(accel[1], accel[2]))*RAD_TO_DEG)-AngleOffset[1];
+    gyroXrate = ((double)gyro[0]-(double)GyroOffset[0])/131;
+    gyroYrate = -(((double)gyro[1]-(double)GyroOffset[1])/131);
+
     /** Feedback Loop *****************************************************/
-    xSpeed = FeedbackControlLoop(gyro[1], GyroOffset[1], -GyroGain[1],
-                                 accel[0], AccelOffset[0], AccelGain[0]);
-    ySpeed = FeedbackControlLoop(gyro[0], GyroOffset[0], GyroGain[0],
-                                 accel[1], AccelOffset[1], AccelGain[1]);
+    compAngleX = (0.99*(compAngleX+(gyroYrate*(double)SAMPLE_TIME)))+(0.01*accXangle); // Calculate the angle using a Complimentary filter
+    compAngleY = (0.99*(compAngleY+(gyroXrate*(double)SAMPLE_TIME)))+(0.01*accYangle);
+    ySpeed = -((compAngleY)*(double)50+(compAngleY-compAngleYlast)*(double)20);
+    xSpeed = -((compAngleX)*(double)50+(compAngleX-compAngleXlast)*(double)20);
+    if (xSpeed<0)
+        xSpeed = -(xSpeed*xSpeed);
+    else
+        xSpeed = xSpeed*xSpeed;
+    if (ySpeed<0)
+        ySpeed = -(ySpeed*ySpeed);
+    else
+        ySpeed = ySpeed*ySpeed;
+    
+    compAngleXlast = compAngleX;
+    compAngleYlast = compAngleY;
+//    xSpeed = gyroXrate *1000;
+//    ySpeed = gyroYrate *1000;
+
     /** Build command string **********************************************/
     command = 0b1000000000000000;
     if (enableSteppers)
         command = command | 0b0100000000000000;
+    /* Send data to Axis Controller ***************************************/
+    chptr = (unsigned char *) &angle;  // For sending a float value
+    CS_Axis = 0;
+    /* Command: MSB
+     * 15: 0 = NO Speed Values
+     * 14: 1 = Enable Stepper Driver
+     * 13:
+     */
+    WriteSPI2(command);                 // Command: MSB
+    WriteSPI2(xSpeed);                  // Send x-velocity vector
+    WriteSPI2(ySpeed);                  // Send y-velocity vector
+    WriteSPI2(*chptr++);                // Sending first part of float value
+    WriteSPI2(*chptr);                // Sending second part of float value
+    CS_Axis = 1;
 
     /** Prepare telemetry *************************************************/
     setRawData2string();
@@ -633,53 +687,19 @@ void __attribute__((__interrupt__, __auto_psv__)) _T1Interrupt(void)
     serString[15] = xSpeed >> 8;
     serString[18] = ySpeed & 0xFF;
     serString[17] = ySpeed >> 8;
+//        serString[18] = iax & 0xFF;
+//        serString[17] = iax >> 8;
+//        serString[20] = igy & 0xFF;
+//        serString[19] = igy >> 8;
 
     /** Send telemetry ****************************************************/
     LDByteWriteSPI(0x27, 0b00010000);  // clear MAX_RT (max retries)
     LDCommandWriteSPI(0xE1);           // Flush TX buffer (tx buffer contains last failed transmission)
     LDByteWriteSPI(0x27, 0b00100000);  // clear TX_DS (ACK received)
     sendnRFstring( serString, 21);
-    chptr = (unsigned char *) &angle;  // For sending a float value
-
-    /* Send data to Axis Controller ***************************************/
-    CS_Axis = 0;
-    /* Command: MSB
-     * 15: 0 = NO Speed Values
-     * 14: 1 = Enable Stepper Driver
-     * 13: 
-     */
-    WriteSPI2(command);                 // Command: MSB
-    WriteSPI2(xSpeed);                  // Send x-velocity vector
-    WriteSPI2(ySpeed);                  // Send y-velocity vector
-    WriteSPI2(*chptr++);                // Sending first part of float value
-    WriteSPI2(*chptr++);                // Sending second part of float value
-//    WriteSPI2(GyroOffset[0]);
-//    WriteSPI2(GyroOffset[1]);
-//    WriteSPI2(GyroOffset[2]);
-    CS_Axis = 1;
 
 
     _LATA4 = 0;
     _T1IF = 0;  // Clear Timer 1 interrupt flag
 
-}
-int FeedbackControlLoop(int gyro, int gos, int ggain, int accel, int aos, int again)
-{
-    int output;
-    output = (((gyro - gos)*ggain) + ((accel - aos)* again))/16;
-    return(output);
-}
-void AverageFilter(void)
-{
-    int i;
-    long temp = 0;
-    axFilterAverage[axFilterPoint] = accel[0];
-    axFilterPoint++;
-    if (axFilterPoint > 31)
-        axFilterPoint = 0;
-    for (i=0;i<32;i++)
-    {
-        temp = temp + axFilterAverage[i];
-    }
-    axFilterAveraged = temp/32;
 }

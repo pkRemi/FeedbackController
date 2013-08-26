@@ -173,20 +173,23 @@ void InitMPU6050(unsigned char I2Caddr)
 {
 
 
-    LDByteWriteI2C(I2Caddr, 0x6B, 0x00); // Wakeup MPU6050
+    LDByteWriteI2C(I2Caddr, 0x6B, 0x01); // Wakeup MPU6050 with PLL to xaxis gyro
+
+    LDByteWriteI2C(I2Caddr, 0x19, 0x07); // Set sample rate to 1kHZ
+
     /* ACCEL_CONFIG 0x1C selftest and Full Scale Range
      0b00000000 -> 2g
      0b00001000 -> 4g
      0b00010000 -> 8g
      0b00011000 -> 16g                                                        */
 
-    LDByteWriteI2C(I2Caddr, 0x1C, 0b00001000); // FSR 4g
+    LDByteWriteI2C(I2Caddr, 0x1C, 0b00000000); // FSR 2g
     /* GYRO_CONFIG 0x1B selftest and Full Scale Range
      0b00000000 -> 250 deg/s
      0b00001000 -> 500 deg/s
      0b00010000 -> 1000 deg/s
      0b00011000 -> 2000 deg/s                                                 */
-    LDByteWriteI2C(I2Caddr, 0x1B, 0b00010000); // FSR 1000 deg/s
+    LDByteWriteI2C(I2Caddr, 0x1B, 0b00000000); // FSR 250 deg/s
     /* GYRO_CONFIG 0x1A Low Pass Filter
      * 0 ->  0.0 ms
      * 1 ->  2.0 ms
@@ -195,7 +198,7 @@ void InitMPU6050(unsigned char I2Caddr)
      * 4 ->  8.5 ms
      * 5 -> 13.8 ms
      * 6 -> 19.0 ms                                               */
-    LDByteWriteI2C(I2Caddr, 0x1A, 5); // 8.5 ms
+    LDByteWriteI2C(I2Caddr, 0x1A, 3); // 0.0 ms and disable FSYNC
 }
 void InitHMC5883L(void)
 {
