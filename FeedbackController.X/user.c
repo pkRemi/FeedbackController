@@ -141,26 +141,26 @@ void initSPI2(void)
 void initnRF(void)
 {
     static const char strTX_ADDR[5] = {0xa5, 0xd6, 0x65, 0xcb, 0x2a};
-    char initString[64] = {0};
-    int size = 0;
 
     // Send powerup and TX mode
     LDByteWriteSPI(0x20, 0b00001010);
 
     // Send TX_ADDR
     LDPageWriteSPI(0x30, strTX_ADDR, 5);
-    size = sizeof(strTX_ADDR);
-    memcpy(initString, strTX_ADDR, size);
-    //sendSPI1string(initString, size);
 
     // Send RX_ADDR_PO
-    LDPageWriteSPI(0x2A, strTX_ADDR, size);
+    LDPageWriteSPI(0x2A, strTX_ADDR, 5);
     //initString[0] = 0x2A; // Same address but different register
     //sendSPI1string(initString, size);
     
+    //LDByteWriteSPI(0x26, 0b00001110);  // Set data rate to 2Mbps and transmit power to 0dBm
+    LDByteWriteSPI(0x31, 32);  //Set receive payload width
+    LDByteWriteSPI(0x3D, 0b00000110);  //Enables dynamic payload length and Payload with ACK
+    LDByteWriteSPI(0x3C, 0b00000001);  //Enables dynamic payload length on data pipe 0
+    LDByteWriteSPI(0x21, 0b00111111);  //Enables Auto Ack
     // Setup retry delay and number of retries
     // Write to SETUP_RETR register
-    // Delay 75us 3 retries
+    // Delay 750us 3 retries
     LDByteWriteSPI(0x24, 0b00100011);
     // Flush buffers and clear flags in case of nRF not being in POR state
     // Device is only reset when power is removed, not when uC is reset

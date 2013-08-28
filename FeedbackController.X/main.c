@@ -23,6 +23,7 @@ void LDByteWriteSPI(unsigned char OpCode, unsigned char Data );
 void LDCommandWriteSPI(unsigned char OpCode );
 unsigned char LDPageWriteSPI( unsigned char OpCode, unsigned char *wrptr, unsigned char strlength );
 unsigned char LDByteReadSPI(unsigned char OpCode, unsigned char *rdptr, unsigned char length );
+unsigned char readnRFbyte(unsigned char OpCode );
 unsigned char LDBytePollnRF();
 void getsSPI( unsigned char *rdptr, unsigned char length );
 void PutStringSPI( unsigned char *wrptr , unsigned char strlength);
@@ -100,8 +101,10 @@ volatile double compAngleYlast = 0.0;
 volatile double accXangle, accYangle;
 unsigned int axFilterPoint = 0;
 signed int axFilterAveraged = 0;
-bool enableSteppers = 0;
+volatile unsigned char enableSteppers = 0;
 int fastSample = 15;
+volatile unsigned int buttonState = 0;
+
 #define PI 3.1415926
 #define RAD_TO_DEG 57.29577951
 #define SAMPLE_TIME 0.01
@@ -113,7 +116,6 @@ int16_t main(void)
 {
 
     unsigned int buttonCounter = 20000;
-    unsigned int buttonState = 0;
     int i;
 
     /* Configure the oscillator for the device */
@@ -160,9 +162,10 @@ int16_t main(void)
         }
         if (buttonState == 1 && !PORTBbits.RB7 && !buttonCounter)
         {
+            enableSteppers = 2;
+            __delay32(40000000);
             buttonState = 2;
             buttonCounter = 20000;
-            __delay32(40000000);
             enableSteppers = 1;
         }
         if (buttonState == 2 && PORTBbits.RB7 && !buttonCounter)
@@ -343,7 +346,15 @@ unsigned char LDByteReadSPI(unsigned char OpCode, unsigned char *rdptr, unsigned
   CS_nRF = 1;                             // Deselect Device
   return ( 0 );
 }
-
+unsigned char readnRFbyte(unsigned char OpCode )
+{
+    char rdata;
+  CS_nRF = 0;                             // Select Device
+  WriteSPI1( OpCode );                  // Send Read OpCode or register
+  rdata = ReadSPI1();           // read in one bytes
+  CS_nRF = 1;                             // Deselect Device
+  return ( rdata );
+}
 /********************************************************************
 *     Function Name:    LDBytePollnRF                               *
 *     Parameters:       None                                        *
@@ -627,7 +638,10 @@ void __attribute__((__interrupt__, __auto_psv__)) _T1Interrupt(void)
     unsigned int *chptr;           // For sending a float value
     unsigned int command;          // For sending commands to Axis Converter
     double gyroXrate, gyroYrate;
-
+    char nRFstatus;
+    unsigned char rfCommands[32];            // Commands received from remote
+    unsigned char nRFregisters[10];
+    int iii;
     // Toggle LED
     _LATA4 = 1;
     /** Read sensors ******************************************************/
@@ -659,7 +673,7 @@ void __attribute__((__interrupt__, __auto_psv__)) _T1Interrupt(void)
 
     /** Build command string **********************************************/
     command = 0b1000000000000000;
-    if (enableSteppers)
+    if (enableSteppers == 1)
         command = command | 0b0100000000000000;
     /* Send data to Axis Controller ***************************************/
     chptr = (unsigned char *) &angle;  // For sending a float value
@@ -681,7 +695,8 @@ void __attribute__((__interrupt__, __auto_psv__)) _T1Interrupt(void)
     /**** Telemetry string format for command=0x42 ************************/
     /** command, axh, axl, ayh, ayl, azh, azl, th, tl,             9byte **/
     /** gxh, gxl, gyh, gyl, gzh, gzl, cxh, cxl, cyh, cyl, czh, czl,12byte**/
-    /**   --Total 21byte                                                 **/
+    /** motorStatus                                                 1byte**/
+    /**   --Total 22byte                                                 **/
 
     serString[16] = xSpeed & 0xFF; // Temporary sending additional telemetry
     serString[15] = xSpeed >> 8;
@@ -692,13 +707,59 @@ void __attribute__((__interrupt__, __auto_psv__)) _T1Interrupt(void)
 //        serString[20] = igy & 0xFF;
 //        serString[19] = igy >> 8;
 
-    /** Send telemetry ****************************************************/
-    LDByteWriteSPI(0x27, 0b00010000);  // clear MAX_RT (max retries)
-    LDCommandWriteSPI(0xE1);           // Flush TX buffer (tx buffer contains last failed transmission)
-    LDByteWriteSPI(0x27, 0b00100000);  // clear TX_DS (ACK received)
-    sendnRFstring( serString, 21);
+    serString[21] = enableSteppers;
 
 
+    /** Receive RF commands if any ********************************************/
+//    LDByteWriteSPI(0x20, 0b00001010);
+    nRFstatus = LDBytePollnRF();
+    for(iii=0; iii<10;iii++) // For debug
+    {
+        nRFregisters[iii] = readnRFbyte(iii);
+    }
+    if (nRFstatus & 0b01000000)  // Data Ready RX FIFO
+    {
+    //    _LATB4 = 1;
+////        Delay10TCYx(100);
+        LDByteReadSPI(0x61, rfCommands, 21);    // Read RX FIFO
+        LDByteWriteSPI(0x27 , 0b01000000);        // Clear RX FIFO interrupt bit
+        //ByteWriteSPI(0xE2 , 0xFF); //Flush RX FIFO
+        if(rfCommands[0] == 0x82)
+        {
+            if(enableSteppers)
+            {
+                enableSteppers = 0;
+                buttonState = 0;
+                //_LATB4 = 0;
+            } else {
+                enableSteppers = 1;
+                buttonState = 2;
+                //_LATB4 = 1;
+            }
+        } else if (rfCommands[0] == 0x82)
+        {
+            _LATB4 = 1;
+        }
+//        //LATDbits.LATD3 = 0;
+//
+    }
+//    LDByteWriteSPI(0x20, 0b00001010);   //
+//    LDByteWriteSPI(0x26, 0b00000010);   // Set RC_CH to reset retransmit counter
+    LDCommandWriteSPI(0xE2);            // Flush RX buffer (not during ACK)
+    /** Send telemetry ********************************************************/
+//    _LATB15 = 0;                        // Set CE low to stop receiving data
+//    LDByteWriteSPI(0x20 , 0b00001010);  // Set to send mode
+//    __delay32(100);
+    LDByteWriteSPI(0x27, 0b00010000);   // clear MAX_RT (max retries)
+    LDCommandWriteSPI(0xE1);            // Flush TX buffer (tx buffer contains last failed transmission)
+    LDByteWriteSPI(0x27, 0b00100000);   // clear TX_DS (ACK received)
+    sendnRFstring( serString, 22);
+    /** Set nRF to recive mode ************************************************/
+//    __delay32(1000);
+//    LDByteWriteSPI(0x27, 0b00100000);   // clear TX_DS (ACK received)
+//    LDByteWriteSPI(0x20 , 0b00001011); // Set to receive mode
+//    _LATB15 = 1;     // Set CE high to start receiving data
+    /* Done with interrupt ****************************************************/
     _LATA4 = 0;
     _T1IF = 0;  // Clear Timer 1 interrupt flag
 
