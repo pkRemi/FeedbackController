@@ -35,7 +35,6 @@ int FeedbackControlLoop(int gyro, int gos, int ggain, int accel, int aos, int ag
 int FeedbackControlLoopPI(int gyro, int ggain, int integrator );
 int saturate(int value, int max);
 void speedFilter(void);
-
 void Pcontroller(void);
 void Speed2Delay(float speed);
 void calcdelay(void);
@@ -95,7 +94,9 @@ signed int igain = 1;
 
 volatile double AngleOffset[2];
 volatile double gyroXangle, gyroYangle; // Angle calculate using the gyro
-volatile double compAngleX, compAngleY; // Calculate the angle using a complementary filter
+volatile double compAngleX, compAngleY = 0; // Calculate the angle using a complementary filter
+volatile double iCompAngleY = 0;        // For integrator Y
+volatile double iCompAngleX = 0;        // For integrator X
 volatile double compAngleXlast = 0.0;
 volatile double compAngleYlast = 0.0;
 volatile double accXangle, accYangle;
@@ -104,7 +105,17 @@ signed int axFilterAveraged = 0;
 volatile unsigned char enableSteppers = 0;
 int fastSample = 15;
 volatile unsigned int buttonState = 0;
-
+volatile unsigned int setValueCode[10] = {1,1,1,1,1,1,1,1,1,1};
+volatile unsigned int pGAIN = 2600;
+volatile unsigned int dGAIN = 20;
+volatile float iGAIN = 2000.0;
+volatile float sGAIN = 0.0;
+volatile float compFilterGyro = 0.95;
+volatile float compFilterAccel = 0.05;
+volatile long xSpeedFilter[30] = {0};
+volatile long ySpeedFilter[30] = {0};
+volatile unsigned int SpeedFilterCounter = 0;
+volatile unsigned int SpeedFilterLength = 0;
 #define PI 3.1415926
 #define RAD_TO_DEG 57.29577951
 #define SAMPLE_TIME 0.01
@@ -642,6 +653,8 @@ void __attribute__((__interrupt__, __auto_psv__)) _T1Interrupt(void)
     unsigned char rfCommands[32];            // Commands received from remote
     unsigned char nRFregisters[10];
     int iii;
+    long long xSpeedFilterSum = 0;
+    long long ySpeedFilterSum = 0;
     // Toggle LED
     _LATA4 = 1;
     /** Read sensors ******************************************************/
@@ -653,18 +666,39 @@ void __attribute__((__interrupt__, __auto_psv__)) _T1Interrupt(void)
     gyroYrate = -(((double)gyro[1]-(double)GyroOffset[1])/131);
 
     /** Feedback Loop *****************************************************/
-    compAngleX = (0.99*(compAngleX+(gyroYrate*(double)SAMPLE_TIME)))+(0.01*accXangle); // Calculate the angle using a Complimentary filter
-    compAngleY = (0.99*(compAngleY+(gyroXrate*(double)SAMPLE_TIME)))+(0.01*accYangle);
-    ySpeed = -((compAngleY)*(double)50+(compAngleY-compAngleYlast)*(double)20);
-    xSpeed = -((compAngleX)*(double)50+(compAngleX-compAngleXlast)*(double)20);
-    if (xSpeed<0)
-        xSpeed = -(xSpeed*xSpeed);
+    compAngleX = (compFilterGyro*(compAngleX+(gyroYrate*(double)SAMPLE_TIME)))+(compFilterAccel*accXangle); // Calculate the angle using a Complimentary filter
+    compAngleY = (compFilterGyro*(compAngleY+(gyroXrate*(double)SAMPLE_TIME)))+(compFilterAccel*accYangle);
+    if (enableSteppers == 1)
+    {
+        iCompAngleY += compAngleY;
+        iCompAngleX += compAngleX;
+    }
     else
-        xSpeed = xSpeed*xSpeed;
-    if (ySpeed<0)
-        ySpeed = -(ySpeed*ySpeed);
-    else
-        ySpeed = ySpeed*ySpeed;
+    {
+        iCompAngleY = 0.0;
+        iCompAngleX = 0.0;
+    }
+    ySpeed = -((compAngleY)*(double)pGAIN+(compAngleY-compAngleYlast)*(double)dGAIN+gyroXrate*(double)iGAIN);
+    xSpeed = -((compAngleX-sGAIN)*(double)pGAIN+(compAngleX-compAngleXlast)*(double)dGAIN+gyroYrate*(double)iGAIN);
+    xSpeedFilter[SpeedFilterCounter] = xSpeed;
+    ySpeedFilter[SpeedFilterCounter] = ySpeed;
+    for(iii = 0; iii<=SpeedFilterLength;iii++)
+    {
+        xSpeedFilterSum += xSpeedFilter[iii];
+        ySpeedFilterSum += ySpeedFilter[iii];
+    }
+    xSpeed = (long long)xSpeedFilterSum/(SpeedFilterLength+1);
+    ySpeed = (long long)ySpeedFilterSum/(SpeedFilterLength+1);
+//    ySpeed = -((compAngleY)*(double)pGAIN+(compAngleY-compAngleYlast)*(double)dGAIN);
+//    xSpeed = -((compAngleX)*(double)pGAIN+(compAngleX-compAngleXlast)*(double)dGAIN);
+//    if (xSpeed<0)
+//        xSpeed = -(xSpeed*xSpeed);
+//    else
+//        xSpeed = xSpeed*xSpeed;
+//    if (ySpeed<0)
+//        ySpeed = -(ySpeed*ySpeed);
+//    else
+//        ySpeed = ySpeed*ySpeed;
     
     compAngleXlast = compAngleX;
     compAngleYlast = compAngleY;
@@ -709,7 +743,9 @@ void __attribute__((__interrupt__, __auto_psv__)) _T1Interrupt(void)
 
     serString[21] = enableSteppers;
 
-
+    SpeedFilterCounter++;
+    if (SpeedFilterCounter> SpeedFilterLength)
+        SpeedFilterCounter = 0;
     /** Receive RF commands if any ********************************************/
 //    LDByteWriteSPI(0x20, 0b00001010);
     nRFstatus = LDBytePollnRF();
@@ -736,9 +772,24 @@ void __attribute__((__interrupt__, __auto_psv__)) _T1Interrupt(void)
                 buttonState = 2;
                 //_LATB4 = 1;
             }
-        } else if (rfCommands[0] == 0x82)
+        } else if (rfCommands[0] == 0x83)
         {
             _LATB4 = 1;
+            // Set the received values to variables
+            for(iii=1;iii<19;iii += 3){
+                if(rfCommands[iii]<9)
+                    setValueCode[rfCommands[iii]] = (rfCommands[iii+1]<<8) + rfCommands[iii+2];
+            }
+            pGAIN = setValueCode[1];
+            dGAIN = setValueCode[2];
+            compFilterGyro = (float)setValueCode[4]/(float)1000;
+            compFilterAccel = 1.0 - compFilterGyro;
+            iGAIN = (float)setValueCode[3]/100.0;
+            //angle = (setValueCode[6]-180)* PI /180.0;
+            //SpeedFilterLength = setValueCode[5];
+            LDByteWriteI2C(0x00D0, 0x1A, setValueCode[5]); // 0.0 ms and disable FSYNC
+            sGAIN = (float)(setValueCode[6]-1000)/100.0;
+
         }
 //        //LATDbits.LATD3 = 0;
 //
